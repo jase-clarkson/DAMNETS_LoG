@@ -264,7 +264,7 @@ class RecurTreeGen(nn.Module):
             self.m_cell_topdown = nn.LSTMCell(args.embed_dim, args.embed_dim)
             self.m_cell_topright = nn.LSTMCell(args.embed_dim, args.embed_dim)
             self.fuser = MLP(2 * args.embed_dim, [4 * args.embed_dim, args.embed_dim], dropout=self.dropout)
-            self.m_pred_sign = MLP(args.embed_dim, [2 * args.embed_dim, 1], dropout=self.dropout)
+            self.m_pred_sign = MLP(args.embed_dim, [2 * args.embed_dim, 3], dropout=self.dropout)
         else:
             fn_pred = lambda: MLP(args.embed_dim, [2 * args.embed_dim, 1])
             fn_tree_cell = lambda: BinaryTreeLSTMCell(args.embed_dim)
@@ -354,27 +354,35 @@ class RecurTreeGen(nn.Module):
 
     def sample_leaf(self, state, col_sm, tree_node, ll, side=None):
         logits = self.pred_sign(state[0])
-        p = torch.sigmoid(logits)
+        # p = torch.sigmoid(logits)
         if col_sm.supervised:  # TODO: check in supervised case that nothing gets through here we don't want to.
             if col_sm.next_edge is not None and tree_node.edge[1] == col_sm.next_edge[0]:
                 sign = col_sm.next_edge[1]
             else:
                 sign = 0
-            # sign_ = torch.LongTensor([sign if 0 <= sign else 1]).to(logits.device)
+            sign_ = torch.LongTensor([sign if 0 <= sign else 2]).to(logits.device)
+            valid = True
         else:
-            edge_decision = torch.bernoulli(p).item()
-            edge_sign = col_sm.get_sign(*tree_node.edge)
-            sign = edge_sign * edge_decision
+            illegal_token = col_sm.get_illegal_token(*tree_node.edge)
+            probs = torch.softmax(logits.squeeze(), 0)
+            sign_ = torch.multinomial(probs, 1)
+            sign = sign_.item()
+            sign = -1 if sign == 2 else sign
+            # Check if it's a valid move or not.
+            valid = False if sign == illegal_token else True
+            sign = 0 if not valid else sign
+            # edge_decision = torch.bernoulli(p).item()
         tree_node.bits_rep = [(0, sign)]
-        if sign != 0:
+        if sign != 0 and valid:
             col_sm.add_edge(tree_node.col_range[0], sign)  # just incr position if supervised
         if tree_node.is_root:
             print('LEAF IS ROOT')
         # print(f'Depth: {tree_node.depth} | Side: {side if side is not None else 0}'
         #       f' Prob : {torch.softmax(logits, dim=1).detach().cpu().numpy()} | Sign: {sign}')
-        # ce = F.cross_entropy(logits, sign_)
+        ce = F.cross_entropy(logits, sign_)
+        ll = ll - (ce if valid else 0)
         has_edge = (sign != 0)
-        ll = ll + (torch.log(p) if has_edge else torch.log(1 - p))
+        # ll = ll + (torch.log(p) if has_edge else torch.log(1 - p))
         if self.bits_compress:
             return ll, self.bit_rep_net(tree_node.bits_rep, tree_node.n_cols), has_edge
         else:
@@ -635,13 +643,13 @@ class RecurTreeGen(nn.Module):
             leaf_states = states[has_leaf]
             leaf_logits = self.pred_sign(leaf_states)
             leaf_labels = TreeLib.GetLeafLabels(lr, lv)
-            # leaf_labels[leaf_labels < 0] = 2  # Change to 2 for cross entropy
-            leaf_labels = np.abs(leaf_labels)
+            leaf_labels[leaf_labels < 0] = 2  # Change to 2 for cross entropy
+            # leaf_labels = np.abs(leaf_labels)
             # print(f'-- Depth: {lv + 1} | lr : {lr}  --')
             # print(torch.softmax(leaf_logits, dim=1).detach().cpu().numpy())
             # print()
-            leaf_ll = self.binary_ll(leaf_logits, leaf_labels, reduction='sum')
-            # leaf_ll = self.categorical_ll(leaf_logits, leaf_labels)
+            # leaf_ll = self.binary_ll(leaf_logits, leaf_labels, reduction='sum')
+            leaf_ll = self.categorical_ll(leaf_logits, leaf_labels)
             if get_idx:
                 leaf_idx = np.ones(len(has_leaf))
                 leaf_idx[has_leaf] = leaf_labels + 1

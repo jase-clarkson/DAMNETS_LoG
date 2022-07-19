@@ -114,9 +114,9 @@ class ColAutomata(object):
                 return True
         return False
 
-    def get_sign(self, u, v):
-        sign = -1 if self.prev_g.has_edge(u, v) else 1
-        return sign
+    def get_illegal_token(self, u, v):
+        edge_exists = self.prev_g.has_edge(u, v)
+        return 1 if edge_exists else -1
 
 
 class AdjRow(object):

@@ -73,9 +73,6 @@ def format_data(graph_ts, n_workers, abs=False):
     format for computation.
     Args:
         graph_ts: The time series to pre-process.
-        start_idx: If some time-series have already been processed, we want to start indexing
-        from the index of the last one in the previous batch (as they are accessed
-        via this index in the TreeLib underlying the bigg model). This is used for training and validation split.
     Returns: A pytorch dataloader that loads the previous network combined with the index in the TreeLib of the
     associated delta matrix we want to learn.
     '''
@@ -105,9 +102,6 @@ def format_data(graph_ts, n_workers, abs=False):
 #     format for computation.
 #     Args:
 #         graph_ts: The time series to pre-process.
-#         start_idx: If some time-series have already been processed, we want to start indexing
-#         from the index of the last one in the previous batch (as they are accessed
-#         via this index in the TreeLib underlying the bigg model). This is used for training and validation split.
 #     Returns: A pytorch dataloader that loads the previous network combined with the index in the TreeLib of the
 #     associated delta matrix we want to learn.
 #     '''
